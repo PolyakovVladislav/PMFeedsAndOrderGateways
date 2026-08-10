@@ -6,6 +6,7 @@
 ![Reactive](https://img.shields.io/badge/reactive-Project%20Reactor-blue)
 ![Tests](https://img.shields.io/badge/tests-30%20passing-brightgreen)
 ![No SDKs](https://img.shields.io/badge/exchange%20SDKs-0-lightgrey)
+[![](https://jitpack.io/v/PolyakovVladislav/pm-feeds-and-order-gateways.svg)](https://jitpack.io/#PolyakovVladislav/pm-feeds-and-order-gateways)
 
 Every venue speaks a different protocol — Polymarket signs EIP-712 orders over a CLOB, Kalshi signs RSA-PSS over REST, PredictFun signs EIP-712 on an EOA — and each streams its book differently. This library hides all of that behind **two ports** and normalises every book into one shape, so your code talks about *legs* and *orders*, not about any one exchange.
 
