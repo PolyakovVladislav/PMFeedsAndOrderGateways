@@ -1,0 +1,5 @@
+# JitPack builds this on its own servers when someone requests a version. It defaults to an old
+# JDK, which cannot compile the records / sealed interfaces / pattern-matching switch this library
+# uses — so pin the toolchain to 21, or the very first build fails.
+jdk:
+  - openjdk21

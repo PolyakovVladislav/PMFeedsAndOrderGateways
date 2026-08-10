@@ -1,0 +1,21 @@
+# Build output
+build/
+.gradle/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+# Leading slash on purpose: only IntelliJ's top-level out/ directory, NOT the
+# domain/port/out source package, which an unanchored "out/" silently swallowed.
+/out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+.env
+*.pem
+*.key
+secrets.properties
