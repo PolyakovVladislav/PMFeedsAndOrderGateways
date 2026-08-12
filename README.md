@@ -8,11 +8,22 @@
 ![No SDKs](https://img.shields.io/badge/exchange%20SDKs-0-lightgrey)
 [![](https://jitpack.io/v/PolyakovVladislav/pm-feeds-and-order-gateways.svg)](https://jitpack.io/#PolyakovVladislav/pm-feeds-and-order-gateways)
 
-Every venue speaks a different protocol — Polymarket signs EIP-712 orders over a CLOB, Kalshi signs RSA-PSS over REST, PredictFun signs EIP-712 on an EOA — and each streams its book differently. This library hides all of that behind **two ports** and normalises every book into one shape, so your code talks about *legs* and *orders*, not about any one exchange.
 
 ---
 
 ## Architecture
+
+**A reactive streaming** client on Project Reactor and reactor-netty. The job: keep N long-lived WebSocket connections healthy, turn their frames into one normalised stream, and never let a dropped socket, a slow consumer or a blocking call corrupt or stall it.
+
+**Data flow.** I/O stays on Netty's shared event loops and does nothing but read frames. Each frame hops off that loop immediately onto a single dedicated worker thread, where all parsing and state mutation happens. Parsed updates are published through per-subject sinks and recombined with combineLatest, so every emission carries the latest state of all subscribed subjects — a consumer reads a consistent multi-source snapshot from one element instead of joining streams by hand.
+
+**Connection management.** Connections are lazy and reference-counted: the socket opens on the first subscriber, is multiplexed across all subsequent ones, and tears down after the last unsubscribes plus a 15s grace window — so a resubscribe inside that window reuses the live socket instead of reconnecting. Subscription intent is tracked separately from connection state, which is what lets the client rebuild its entire subscription set automatically after a reconnect.
+
+**Failure handling.** A dropped connection retries indefinitely with exponential backoff capped at 30s. On reconnect nothing is assumed intact: cached state is explicitly invalidated and every subscription replayed. Where the protocol streams incremental deltas, a sequence-number gap forces a full snapshot re-sync — itself rate-limited so a flapping connection can't storm the upstream — because a silently mis-applied delta is far worse than a visible reconnect.
+
+**Overload handling.** Every stage is bounded. Sinks emit best-effort and drop instead of blocking a producer, and the consumer-facing path retains only the latest value per subject. Under a burst the newest state wins and nothing queues without bound — intermediate ticks are worthless to a consumer that only ever acts on current state.
+
+**Lifecycle.** The worker thread is a daemon and the client is AutoCloseable: a forgotten close() degrades into a bounded leak, never a JVM that refuses to exit.
 
 ```mermaid
 flowchart LR
@@ -28,7 +39,7 @@ flowchart LR
         ROUTE["RoutingOrderGateway"]
     end
 
-    subgraph venues["Venues"]
+    subgraph exchanges["exchanges"]
         POLY["Polymarket"]
         KAL["Kalshi"]
         PF["PredictFun"]
@@ -107,13 +118,13 @@ try (PredictionMarketClient client = PredictionMarketClient.builder()
 }
 ```
 
-Configure only the venues you use — a leg for an unconfigured venue fails loudly rather than silently. The client is `AutoCloseable`; `close()` releases the pooled REST connections and the parsing thread.
+Configure only the exchanges you use — a leg for an unconfigured venue fails loudly rather than silently. The client is `AutoCloseable`; `close()` releases the pooled REST connections and the parsing thread.
 
 ---
 
 ## The two ports
 
-**`OrderBookFeed`** — live books for a set of legs, normalised across venues.
+**`OrderBookFeed`** — live books for a set of legs, normalised across exchanges.
 
 ```java
 Flux<List<TokenBookEvent>> combinedStream(List<Token> tokens);
@@ -131,11 +142,11 @@ Mono<Void>               cancel(String orderId);
 Mono<Void>               warmup();
 ```
 
-**Placement across venues is concurrent, not atomic.** A basket spanning two exchanges is one bulk request per exchange; either can fill, partially fill or reject on its own. Always read the per-leg `OrderResult` and reconcile — an unhedged leg is a real position, not a retry.
+**Placement across exchanges is concurrent, not atomic.** A basket spanning two exchanges is one bulk request per exchange; either can fill, partially fill or reject on its own. Always read the per-leg `OrderResult` and reconcile — an unhedged leg is a real position, not a retry.
 
 ---
 
-## Supported venues
+## Supported exchanges
 
 | Venue | Order signing | Market data |
 |---|---|---|
